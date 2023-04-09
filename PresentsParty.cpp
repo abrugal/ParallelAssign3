@@ -12,191 +12,367 @@
 #include <queue>
 #include <cstdlib>
 #include <unordered_map>
+#include <list>
+#include <atomic>
+#include <unordered_set>
 
 
-using namespace std; 
+#define MAX_PRESENTS 500000
 
-/* Link list node */
-struct Node {
-    int data;
-    struct Node* next;
+
+using namespace std;
+using namespace std::chrono;
+
+int addCounter = 0;
+int enteredAddCounter = 0;
+int removeCounter = 0;
+
+class Node {
+public:
+	int data;
+	int hashKey;
+	Node* next;
+	bool marked;
+
+private:
+	mutex m;
+
+public:
+	Node(int data) {
+		this->data = data;
+		hashKey = data;
+		next = NULL;
+		marked = false;
+	}
+
+public:
+	void lock() {
+		m.lock();
+	}
+	void unlock() {
+		m.unlock();
+	}
+
+public:
+	bool add(Node* head, int value) {
+		int key = value;
+		while (true) {
+			Node* pred = head;
+			Node* curr = head->next;
+
+			while (curr->hashKey < key) {
+				pred = curr;
+				curr = curr->next;
+			}
+			pred->lock();
+			try {
+				curr->lock();
+				try {
+					if (validate(pred, curr)) {
+						if (curr->hashKey == key) {
+							curr->unlock();
+							pred->unlock();
+							return false;
+						}
+						else {
+							Node* node = new Node(value);
+							node->next = curr;
+							pred->next = node;
+							curr->unlock();
+							pred->unlock();
+							return true;
+						}
+					}
+				}
+				catch (...) {
+					cout << "Failed to add: " << value << endl;
+				}
+				curr->unlock();
+			}
+			catch (...) {
+				cout << "Failed to add: " << value << endl;
+			}
+			pred->unlock();
+		}
+	}
+
+public:
+	bool remove(Node* head, int value) {
+		int key = value;
+		while (true) {
+			Node* pred = head;
+			Node* curr = head->next;
+
+			while (curr->hashKey < key) {
+				pred = curr;
+				curr = curr->next;
+			}
+
+			pred->lock();
+			try {
+				curr->lock();
+				try {
+					if (validate(pred, curr)) {
+						if (curr->hashKey != key) {
+							curr->unlock();
+							pred->unlock();
+							return false;
+						}
+						else {
+							curr->marked = true;
+							pred->next = curr->next;
+							curr->unlock();
+							pred->unlock();
+							return true;
+						}
+					}
+				}
+				catch (...) {
+					cout << "Failed to remove: " << value << endl;
+				}
+				curr->unlock();
+			}
+			catch (...) {
+				cout << "Failed to remove: " << value << endl;
+			}
+			pred->unlock();
+			return false;
+		}
+	}
+
+public:
+	bool removeFront(Node* head) {
+		while (true) {
+			Node* pred = head;
+			Node* curr = head->next;
+
+			while (curr->marked) {
+				pred = curr;
+				curr = curr->next;
+			}
+
+			pred->lock();
+			try {
+				curr->lock();
+				try {
+					if (validate(pred, curr)) {
+						if (curr->hashKey == INT_MAX) {
+							curr->unlock();
+							pred->unlock();
+							return false;
+						}
+						else {
+							curr->marked = true;
+							pred->next = curr->next;
+							curr->unlock();
+							pred->unlock();
+							return true;
+						}
+					}
+				}
+				catch (...) {
+					cout << "Failed to remove front " << endl;
+				}
+				curr->unlock();
+			}
+			catch (...) {
+				cout << "Failed to remove front " << endl;
+			}
+			pred->unlock();
+		}
+	}
+
+public:
+	bool contains(Node* head, int value) {
+		int key = value;
+		Node* curr = head;
+		while (curr->hashKey < key)
+			curr = curr->next;
+		return curr->hashKey == key && !curr->marked;
+	}
+
+public:
+	bool everContained(Node* head, int value) {
+		int key = value;
+		Node* curr = head;
+		while (curr->hashKey < key)
+			curr = curr->next;
+		return curr->hashKey == key;
+	}
+
+public:
+	int size(Node* head, Node* tail) {
+		int counter = 0;
+		Node* curr = head;
+		while (curr->next != NULL) {
+			curr = curr->next;
+			if (!curr->marked && curr != tail)
+				counter++;
+		}
+		return counter;
+	}
+
+public:
+	void print(Node* head, Node* tail) {
+		Node* curr = head;
+		while (curr->next != NULL) {
+			curr = curr->next;
+			if (!curr->marked && curr != tail)
+				cout << curr->data << " ";
+		}
+		cout << endl;
+	}
+
+private:
+	bool validate(Node* pred, Node* curr) {
+		return !pred->marked && !curr->marked && pred->next == curr;
+	}
 };
 
-//delete first node in the linked list
-Node* deleteFirstNode(struct Node* head)
-{
-    if (head == NULL)
-        return NULL;
 
-    // Move the head pointer to the next node
-    Node* tempNode = head;
-    head = head->next;
-    delete tempNode;
+Node* deleteHead(Node* head) {
+	if (head == NULL) {
+		return NULL;
+	}
 
-    return head;
+	if (head->next == NULL) {
+		delete head;
+		return NULL;
+	}
+
+	Node* temp = head;
+	head = head->next;
+	delete temp;
+
+	return head;
 }
 
-//delete last node from linked list
-Node* removeLastNode(struct Node* head)
-{
-    if (head == NULL)
-        return NULL;
-
-    if (head->next == NULL) {
-        delete head;
-        return NULL;
-    }
-
-    // first find second last node
-    Node* second_last = head;
-    while (second_last->next->next != NULL)
-        second_last = second_last->next;
-
-    // Delete the last node
-    delete (second_last->next);
-
-    // set next of second_last to null
-    second_last->next = NULL;
-
-    return head;
-}
-
-// create linked list by adding nodes at head
-void push(struct Node** head, int new_data)
-{
-    struct Node* newNode = new Node;
-    newNode->data = new_data;
-    newNode->next = (*head);
-    (*head) = newNode;
-}
-
-
-
-Node* head = NULL;
+Node* head = new Node(INT_MIN);
+Node* tail = new Node(INT_MAX);
+atomic<int> numOfThankYouCards = 0;
+mutex m;
+list<int> unorderedBag;
+int* presents = new int[MAX_PRESENTS];
 
 void hookPresentToChain(int present) {
-    if (head == NULL || head->data > present) {
-        push(&head, present);
-    }
-    else {
-        Node* previousNode = head;
-
-        while (previousNode->next != NULL) {
-            int previousData = previousNode->data;
-            int followingData = previousNode->next->data;
-
-            if (previousData < present && present < followingData) {
-                Node* tempNode = previousNode->next;
-                Node* newNode = new Node;
-                newNode->data = present;
-                newNode->next = tempNode;
-
-                previousNode->next = newNode;
-
-                return;
-            }
-
-            previousNode = previousNode->next;
-        }
-
-        Node* newNode = new Node;
-        newNode->data = present;
-        newNode->next = NULL;
-        previousNode->next = newNode;
-    }
+	head->add(head, present);
 }
 
-bool unhookPresentFromChain(int present) {
-    if (head == NULL) {
-        return false;
-    }
-    else if (head->data == present) {
-        head = deleteFirstNode(head);
-        return true;
-    }
-    else {
-        Node* currentNode = head;
-
-        while (currentNode->next != NULL) {
-            int nextData = currentNode->next->data;
-
-            if (nextData == present) {
-                Node* tempNode = currentNode->next;
-                currentNode->next = tempNode->next;
-
-                delete tempNode;
-
-                return true;
-            }
-
-            currentNode = currentNode->next;
-        }
-
-        return false;
-    }
+void unhookPresentFromChain() {
+	if (head->removeFront(head)) {
+		numOfThankYouCards++;
+	}
 }
 
 bool checkIfPresentInChain(int present) {
-    if (head == NULL) {
-        return false;
-    }
-    else if (head->data == present) {
-        return true;
-    }
-    else {
-        Node* currentNode = head;
-
-        while (currentNode->next != NULL) {
-            int nextData = currentNode->next->data;
-
-            if (nextData == present) {
-                return true;
-            }
-
-            currentNode = currentNode->next;
-        }
-        return false;
-    }
+	return head->contains(head, present);
 }
+
+int roll(int min, int max)
+{
+	// x is in [0,1[
+	double x = rand() / static_cast<double>(RAND_MAX + 1);
+
+	// [0,1[ * (max - min) + min is in [min,max[
+	int that = min + static_cast<int>(x * (max - min));
+
+	return that;
+}
+
+int removeFromBag() {
+	m.lock();
+	if (unorderedBag.size() == 0) {
+		m.unlock();
+		return INT_MIN;
+	}
+	int present = unorderedBag.front();
+	unorderedBag.remove(present);
+	m.unlock();
+	return present;
+}
+
+void work(int job) {
+	while (numOfThankYouCards < MAX_PRESENTS) {
+		if (job == 0) {
+			job = 1;
+			if (unorderedBag.size() == 0)
+				continue;
+			int present = removeFromBag();
+			if (present == INT_MIN) {
+				continue;
+			}
+			hookPresentToChain(present);			
+		}
+		else if (job == 1) {
+			job = 2;
+			unhookPresentFromChain();
+		}
+		else {
+			job = 0;
+			int randomPresent = presents[roll(0, MAX_PRESENTS)];
+			checkIfPresentInChain(randomPresent);
+		}
+	}
+}
+
+
 
 int main()
 {
-    srand(time(0));
+	head->next = tail;
+	srand(time(0));
 
-    int* presents = new int[500];
-    unordered_map<int, int> map;
-    int numOfThankYouCards = 0;
-
+	unordered_map<int, int> map;
 
 
-    // Create the unique tags for each present
-    for (int i = 0; i < 500; i++) {
+	// Create the unique tags for each present
+	for (int i = 0; i < MAX_PRESENTS; i++) {
 
-        int randomNum;
+		int randomNum;
 
-        // Make sure all numbers are unique
-        while (true) {
-            randomNum = rand() * (RAND_MAX + 1) + rand();
-            if (map[randomNum] != randomNum) {
-                presents[i] = randomNum;
-                map[randomNum] = randomNum;
-                break;
-            }
-        }
-    }
+		// Make sure all numbers are unique
+		while (true) {
+			randomNum = rand() * (RAND_MAX + 1) + rand();
+			if (map[randomNum] != randomNum) {
+				presents[i] = randomNum;
+				map[randomNum] = randomNum;
+				break;
+			}
+		}
+	}
+
+	// Put presents in bag
+	for (int i = 0; i < MAX_PRESENTS; i++) {
+		unorderedBag.push_front(presents[i]);
+	}
+
+	cout << "Done initializing" << endl;
+
+	auto start = high_resolution_clock::now();
 
 
-    for (int i = 0; i < 500; i++) {
-        hookPresentToChain(presents[i]);
-    }
+	thread worker1(work, 0);
+	thread worker2(work, 1);
+	thread worker3(work, 2);
+	thread worker4(work, 0);
 
+	worker1.join();
+	worker2.join();
+	worker3.join();
+	worker4.join();
 
-    delete[] presents;
-    
-    // Delete linked list
-    while (head != NULL) {
-        head = deleteFirstNode(head);
-    }
+	auto stop = high_resolution_clock::now();
+	duration<double> diff = stop - start;
+
+	delete[] presents;
+	cout << diff.count() << " seconds " << endl;
+	cout << "Num of thank you cards: " << numOfThankYouCards << endl;
+	cout << "Linked list length: " << head->size(head, tail) << endl;
+	head->print(head, tail);
+
+	while (head != NULL) {
+		head = deleteHead(head);
+	}
 }
 
 

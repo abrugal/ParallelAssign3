@@ -1,5 +1,3 @@
-
-
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -41,7 +39,7 @@ void print(int array[]) {
 
 
 void getBottomFive() {
-    int botFive[5] = {100, 100, 100, 100, 100};
+    int botFive[5] = { 100, 100, 100, 100, 100 };
     for (int i = 0; i < 8; i++) {
         vector<pair<int, int>> list = temperatures[i];
 
@@ -127,6 +125,8 @@ void work(int id) {
             int minute = i;
             pair<int, int> pair(minute, temperature);
             idTemperatures[i - 1] = pair;
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
         temperatures[id] = idTemperatures;
@@ -135,7 +135,7 @@ void work(int id) {
             makeReport(hour);
         }
     }
-    
+
 }
 
 int main()
